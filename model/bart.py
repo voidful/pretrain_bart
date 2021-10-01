@@ -8,7 +8,6 @@ import pytorch_lightning as pl
 import torch.utils.data as data
 from functools import partial
 from tqdm.auto import tqdm
-import nlp2
 
 logger = logging.get_logger(__name__)
 
@@ -21,6 +20,26 @@ def dataset_collate(batch, tokenizer):
                        padding='max_length', add_special_tokens=False)['input_ids']
     inputs['labels'] = labels
     return inputs
+
+
+class DataModule(pl.LightningDataModule):
+    def __init__(self, tokenizer_config, train_datalist, val_datalist, batch_size):
+        super().__init__()
+        self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_config)
+        self.train_datalist = train_datalist
+        self.val_datalist = val_datalist
+        self.batch_size = batch_size
+
+    def train_dataloader(self):
+        loader = data.DataLoader(Dataset(self.train_datalist, self.tokenizer), batch_size=self.batch_size, shuffle=True,
+                                 collate_fn=partial(dataset_collate, tokenizer=self.tokenizer))
+        return loader
+
+    def val_dataloader(self):
+        loader = data.DataLoader(Dataset(self.val_datalist, self.tokenizer), batch_size=self.batch_size,
+                                 shuffle=False,
+                                 collate_fn=partial(dataset_collate, tokenizer=self.tokenizer))
+        return loader
 
 
 class Dataset(data.Dataset):
@@ -37,8 +56,7 @@ class Dataset(data.Dataset):
 # Denoising Pre-Training
 class BARTDPTModel(pl.LightningModule):
 
-    def __init__(self, model_config=None, tokenizer_config=None, train_datalist=None, eval_datalist=None,
-                 lr=3e-4, batch_size=10):
+    def __init__(self, model_config=None, tokenizer_config=None, lr=3e-4, batch_size=10):
         super().__init__()
         if model_config is not None:
             # https://huggingface.co/transformers/model_doc/bart.html#transformers.BartForConditionalGeneration
@@ -47,20 +65,7 @@ class BARTDPTModel(pl.LightningModule):
             self.bart.resize_token_embeddings(self.tokenizer.vocab_size)
             self.config = model_config
             self.lr = lr
-            self.train_datalist = train_datalist
-            self.eval_datalist = eval_datalist
             self.batch_size = batch_size
-
-    def train_dataloader(self):
-        loader = data.DataLoader(Dataset(self.train_datalist, self.tokenizer), batch_size=self.batch_size, shuffle=True,
-                                 collate_fn=partial(dataset_collate, tokenizer=self.tokenizer))
-        return loader
-
-    def val_dataloader(self):
-        loader = data.DataLoader(Dataset(self.train_datalist, self.tokenizer), batch_size=self.batch_size,
-                                 shuffle=False,
-                                 collate_fn=partial(dataset_collate, tokenizer=self.tokenizer))
-        return loader
 
     def forward(self, input_text):
         outputs = self.bart(
