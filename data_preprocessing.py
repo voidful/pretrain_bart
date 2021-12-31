@@ -4,7 +4,7 @@ import sys
 
 import numpy as np
 import nlp2
-from datasets import load_dataset
+from datasets import load_dataset, tqdm
 from itertools import groupby
 
 from transformers import AutoTokenizer
@@ -49,8 +49,11 @@ def main(arg=None):
             for ind, word in enumerate(input_sent):
                 prob = random.random()
                 if prob <= input_arg['mask_prob'] and len(word) > 0:
-                    length = np.random.poisson(input_arg['poisson_lam'], 1)[0]
-                    input_sent[ind:ind + length] = [MASKTOK] * len(input_sent[ind:ind + length])
+                    length = np.random.poisson(lam=input_arg['poisson_lam'])
+                    if length == 0:
+                        input_sent.insert(ind, MASKTOK)
+                    else:
+                        input_sent[ind:ind + length] = [MASKTOK] * len(input_sent[ind:ind + length])
             input_sent = [k for k, _ in groupby(input_sent)]  # merge_repeat
             input_sent = nlp2.join_words_to_sentence(input_sent)
             examples['input_sent'] = input_sent
@@ -60,7 +63,9 @@ def main(arg=None):
         return examples
 
     dataset = dataset.map(noisy, num_proc=input_arg['worker'])
-    dataset.save_to_disk(input_arg['output_name'])
+    dataset.save_to_disk(input_arg['output_name'] + "_cache")
+    dataset['data'].to_csv(f'{input_arg["output_name"]}_bart.csv', columns=['input_sent', 'target_sent'], header=False,
+                           index=False)
 
 
 if __name__ == "__main__":
